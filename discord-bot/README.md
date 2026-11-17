@@ -7,7 +7,8 @@ Bot Python utilisant `discord.py` et le préfixe `!`.
 Dans `config.py`, modifie les valeurs :
 
 - `PAYPAL_LINK` : ton lien PayPal complet, commençant par `https://`
-- `LITECOIN_ADDRESS` : ton adresse de réception Litecoin
+- `LITECOIN_ADDRESS_SHIN` : l'adresse Litecoin envoyée par `!ltc`
+- `LITECOIN_ADDRESS_YASKO` : l'adresse Litecoin envoyée par `!ltcy`
 
 Enregistre le fichier après modification.
 
@@ -48,7 +49,8 @@ et consulter ses journaux.
 ## Commandes
 
 - `!ppl` envoie le lien PayPal configuré.
-- `!ltc` envoie l'adresse Litecoin configurée.
+- `!ltc` envoie l'adresse « Shin Addy » configurée.
+- `!ltcy` envoie l'adresse « Yasko Addy » configurée.
 - `!verifysetup @Rôle` publie un panneau de vérification dans le salon courant.
 
 Si une valeur est encore vide ou invalide, le bot explique quel réglage corriger.

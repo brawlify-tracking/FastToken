@@ -1,4 +1,4 @@
-"""Discord bot with commands for PayPal and Litecoin payments."""
+"""Discord bot for PayPal, Litecoin, and member verification."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import discord
 from discord.ext import commands
 
-from config import LITECOIN_ADDRESS, PAYPAL_LINK
+from config import LITECOIN_ADDRESS_SHIN, LITECOIN_ADDRESS_YASKO, PAYPAL_LINK
 from verification import (
     VerificationView,
     register_saved_verification_views,
@@ -86,22 +86,36 @@ async def paypal(ctx: commands.Context[commands.Bot]) -> None:
 
 @bot.command(name="ltc")
 async def litecoin(ctx: commands.Context[commands.Bot]) -> None:
-    """Send the configured Litecoin address."""
-    address = LITECOIN_ADDRESS.strip()
+    """Send Shin's configured Litecoin address."""
+    await _send_litecoin_address(ctx, "Shin Addy", LITECOIN_ADDRESS_SHIN)
+
+
+@bot.command(name="ltcy")
+async def litecoin_yasko(ctx: commands.Context[commands.Bot]) -> None:
+    """Send Yasko's configured Litecoin address."""
+    await _send_litecoin_address(ctx, "Yasko Addy", LITECOIN_ADDRESS_YASKO)
+
+
+async def _send_litecoin_address(
+    ctx: commands.Context[commands.Bot],
+    owner: str,
+    configured_address: str,
+) -> None:
+    address = configured_address.strip()
     if not address:
         await ctx.send(
-            "L'adresse Litecoin n'est pas configurée. "
+            f"L'adresse Litecoin de {owner} n'est pas encore configurée. "
             "Ajoute-la dans discord-bot/config.py."
         )
         return
 
     embed = discord.Embed(
-        title="Paiement en Litecoin",
+        title=f"Adresse Litecoin — {owner}",
         description="Envoie ton paiement à l’adresse de réception ci-dessous.",
         color=discord.Color(0x345D9D),
     )
     embed.add_field(
-        name="Adresse Litecoin",
+        name=owner,
         value=f"```text\n{address}\n```",
         inline=False,
     )

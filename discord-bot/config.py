@@ -5,4 +5,5 @@ token in this file; it belongs in Replit Secrets as DISCORD_TOKEN.
 """
 
 PAYPAL_LINK = "https://www.paypal.me/shinrr"
-LITECOIN_ADDRESS = "LKnpWzifLZLDJDZPthcpvoQGXYCwYKdtfy"
+LITECOIN_ADDRESS_SHIN = "LKnpWzifLZLDJDZPthcpvoQGXYCwYKdtfy"
+LITECOIN_ADDRESS_YASKO = ""
