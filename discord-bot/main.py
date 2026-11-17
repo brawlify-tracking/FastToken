@@ -10,6 +10,11 @@ import discord
 from discord.ext import commands
 
 from config import LITECOIN_ADDRESS, PAYPAL_LINK
+from verification import (
+    VerificationView,
+    register_saved_verification_views,
+    save_verification_role,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +25,13 @@ logger = logging.getLogger("payment-bot")
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
+class PaymentBot(commands.Bot):
+    async def setup_hook(self) -> None:
+        await super().setup_hook()
+        register_saved_verification_views(self)
+
+
+bot = PaymentBot(command_prefix="!", intents=intents, help_command=None)
 
 
 def _valid_paypal_link(value: str) -> bool:
@@ -99,6 +110,85 @@ async def litecoin(ctx: commands.Context[commands.Bot]) -> None:
     await ctx.send(
         embed=embed,
         allowed_mentions=discord.AllowedMentions.none(),
+    )
+
+
+@bot.command(name="verifysetup")
+@commands.guild_only()
+@commands.has_guild_permissions(administrator=True)
+async def verify_setup(
+    ctx: commands.Context[commands.Bot],
+    role: discord.Role,
+) -> None:
+    """Post a verification panel that assigns the selected role."""
+    guild = ctx.guild
+    if guild is None:
+        await ctx.send("Cette commande doit être utilisée dans un serveur.")
+        return
+
+    bot_member = guild.me
+    if bot_member is None or not bot_member.guild_permissions.manage_roles:
+        await ctx.send(
+            "Le bot a besoin de la permission « Gérer les rôles » "
+            "pour attribuer le rôle de vérification."
+        )
+        return
+
+    if role.is_default() or role.managed:
+        await ctx.send("Choisis un rôle de membre normal, pas un rôle géré.")
+        return
+
+    if role >= bot_member.top_role:
+        await ctx.send(
+            "Dans les paramètres du serveur, place le rôle du bot au-dessus "
+            "du rôle de vérification, puis réessaie."
+        )
+        return
+
+    save_verification_role(bot, role.id)
+
+    embed = discord.Embed(
+        title="Vérification du serveur",
+        description=(
+            "Clique sur le bouton ci-dessous pour vérifier ton compte et "
+            f"obtenir le rôle **{role.name}**."
+        ),
+        color=discord.Color(0x3BA55D),
+    )
+    embed.set_footer(text="Cette étape donne accès aux salons réservés aux membres.")
+    await ctx.send(
+        embed=embed,
+        view=VerificationView(role.id),
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
+
+
+@bot.event
+async def on_command_error(
+    ctx: commands.Context[commands.Bot],
+    error: commands.CommandError,
+) -> None:
+    if isinstance(error, commands.CommandNotFound):
+        return
+
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("Seuls les administrateurs peuvent publier le panneau.")
+        return
+
+    if isinstance(error, commands.MissingRequiredArgument):
+        if ctx.command is not None and ctx.command.name == "verifysetup":
+            await ctx.send("Utilisation : `!verifysetup @RôleVérifié`")
+            return
+
+    if isinstance(error, commands.BadArgument):
+        if ctx.command is not None and ctx.command.name == "verifysetup":
+            await ctx.send("Mentionne le rôle à attribuer, par exemple `!verifysetup @Membre`.")
+            return
+
+    logger.error(
+        "Erreur sur la commande %s",
+        ctx.command,
+        exc_info=(type(error), error, error.__traceback__),
     )
 
 
