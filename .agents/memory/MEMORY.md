@@ -1,2 +1,3 @@
 - [Discord payment messages](discord-payment-messages.md) — preserve the approved PayPal button and copyable Litecoin embed.
 - [Discord verification flow](discord-verification-flow.md) — keep member verification button-based and role-assigning.
+- [Discord vouch flow](discord-vouches.md) — use the approved in-Discord setup and anonymous, one-message vouch forwarding flow.

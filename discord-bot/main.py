@@ -9,18 +9,25 @@ from urllib.parse import urlparse
 import discord
 from discord.ext import commands
 
-from config import LITECOIN_ADDRESS_SHIN, LITECOIN_ADDRESS_YASKO, PAYPAL_LINK
+from config import (
+    LITECOIN_ADDRESS_SHIN,
+    LITECOIN_ADDRESS_YASKO,
+    PAYPAL_LINK,
+    VOUCH_PROMPT,
+)
 from verification import (
     VerificationView,
     register_saved_verification_views,
     save_verification_role,
 )
+from vouches import VouchManager, anonymize_vouch
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger("payment-bot")
+vouch_manager = VouchManager()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -94,6 +101,174 @@ async def litecoin(ctx: commands.Context[commands.Bot]) -> None:
 async def litecoin_yasko(ctx: commands.Context[commands.Bot]) -> None:
     """Send Yasko's configured Litecoin address."""
     await _send_litecoin_address(ctx, "Yasko Addy", LITECOIN_ADDRESS_YASKO)
+
+
+@bot.command(name="vchsetup")
+@commands.guild_only()
+@commands.has_guild_permissions(administrator=True)
+async def vouch_setup(
+    ctx: commands.Context[commands.Bot],
+    channel: discord.TextChannel | None = None,
+) -> None:
+    """Configure or display the destination channel for customer vouches."""
+    guild = ctx.guild
+    if guild is None:
+        await ctx.send("Cette commande doit être utilisée dans un serveur.")
+        return
+
+    bot_member = guild.me
+    if bot_member is None:
+        await ctx.send("Je ne peux pas vérifier mes permissions sur ce serveur.")
+        return
+
+    if channel is None:
+        saved_channel_id = vouch_manager.destination_channel_id(guild.id)
+        saved_channel = (
+            guild.get_channel(saved_channel_id) if saved_channel_id is not None else None
+        )
+        if isinstance(saved_channel, discord.TextChannel):
+            await ctx.send(f"Les vouches seront publiés dans {saved_channel.mention}.")
+        else:
+            await ctx.send("Aucun salon configuré. Utilise `!vchsetup #vouches`.")
+        return
+
+    permissions = channel.permissions_for(bot_member)
+    if (
+        not permissions.view_channel
+        or not permissions.send_messages
+        or not permissions.embed_links
+    ):
+        await ctx.send(
+            "Le bot doit pouvoir voir ce salon, y envoyer des messages "
+            "et intégrer des liens."
+        )
+        return
+
+    vouch_manager.set_destination_channel(guild.id, channel.id)
+    await ctx.send(f"Salon des vouches configuré : {channel.mention}.")
+
+
+@bot.command(name="vch")
+@commands.guild_only()
+@commands.has_guild_permissions(manage_messages=True)
+async def vouch(ctx: commands.Context[commands.Bot]) -> None:
+    """Ask for a vouch and forward the next customer's text anonymously."""
+    guild = ctx.guild
+    if guild is None:
+        await ctx.send("Cette commande doit être utilisée dans un serveur.")
+        return
+
+    destination_channel_id = vouch_manager.destination_channel_id(guild.id)
+    destination = (
+        guild.get_channel(destination_channel_id)
+        if destination_channel_id is not None
+        else None
+    )
+    if not isinstance(destination, discord.TextChannel):
+        await ctx.send(
+            "Le salon de vouches n'est pas configuré. "
+            "Un administrateur doit lancer `!vchsetup #vouches`."
+        )
+        return
+
+    if vouch_manager.get(ctx.channel.id) is not None:
+        await ctx.send(
+            "Un vouch est déjà en attente dans ce ticket. "
+            "Attends la réponse du client avant d'en lancer un autre."
+        )
+        return
+
+    bot_member = guild.me
+    destination_permissions = (
+        destination.permissions_for(bot_member) if bot_member else None
+    )
+    if (
+        destination_permissions is None
+        or not destination_permissions.view_channel
+        or not destination_permissions.send_messages
+        or not destination_permissions.embed_links
+    ):
+        await ctx.send(
+            "Le bot doit pouvoir voir le salon configuré, y envoyer des messages "
+            "et intégrer des liens."
+        )
+        return
+
+    vouch_manager.arm(ctx.channel.id, guild.id, destination.id)
+    try:
+        await ctx.send(
+            f"{VOUCH_PROMPT}\n\n"
+            f"Ta prochaine réponse sera publiée sans ton nom dans "
+            f"{destination.mention}. N'inclus pas d'informations personnelles."
+        )
+    except discord.HTTPException:
+        vouch_manager.clear(ctx.channel.id)
+        raise
+
+
+@bot.listen("on_message")
+async def forward_vouch(message: discord.Message) -> None:
+    """Forward one text response from a non-staff member without attribution."""
+    if message.author.bot or message.guild is None:
+        return
+    if not isinstance(message.author, discord.Member):
+        return
+
+    pending = vouch_manager.get(message.channel.id)
+    if pending is None or pending.guild_id != message.guild.id:
+        return
+
+    # Staff messages and bot commands must not be mistaken for a customer's vouch.
+    if message.author.guild_permissions.manage_messages:
+        return
+    if message.content.startswith("!"):
+        return
+
+    content = anonymize_vouch(message.content)
+    if not content:
+        if message.attachments:
+            await message.channel.send(
+                "Le salon `#vouches` ne reçoit que du texte. "
+                "Envoie une phrase pour ton vouch."
+            )
+        return
+
+    destination = message.guild.get_channel(pending.destination_channel_id)
+    if not isinstance(destination, discord.TextChannel):
+        vouch_manager.clear(message.channel.id)
+        await message.channel.send(
+            "Le salon configuré pour les vouches est introuvable. "
+            "Un membre du staff peut relancer `!vch` après l'avoir recréé."
+        )
+        return
+
+    embed = discord.Embed(
+        title="Nouveau vouch",
+        description=content[:4096],
+        color=discord.Color(0x57F287),
+    )
+    try:
+        await destination.send(
+            embed=embed,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    except discord.Forbidden:
+        vouch_manager.clear(message.channel.id)
+        await message.channel.send(
+            "Je n'ai pas la permission de publier dans le salon configuré. "
+            "Vérifie ses permissions, puis relance `!vch`."
+        )
+        return
+    except discord.HTTPException:
+        logger.exception("Impossible de publier le vouch dans #vouches")
+        vouch_manager.clear(message.channel.id)
+        await message.channel.send(
+            "Je n'ai pas pu publier le vouch. Le staff peut relancer `!vch`."
+        )
+        return
+
+    vouch_manager.clear(message.channel.id)
+    await message.channel.send("Merci, ton vouch a été publié anonymement.")
 
 
 async def _send_litecoin_address(
@@ -186,12 +361,25 @@ async def on_command_error(
         return
 
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send("Seuls les administrateurs peuvent publier le panneau.")
+        if ctx.command is not None and ctx.command.name == "vch":
+            await ctx.send(
+                "La commande `!vch` est réservée au staff ayant "
+                "la permission « Gérer les messages »."
+            )
+        elif ctx.command is not None and ctx.command.name == "vchsetup":
+            await ctx.send("Seuls les administrateurs peuvent configurer le salon des vouches.")
+        else:
+            await ctx.send("Seuls les administrateurs peuvent publier le panneau.")
         return
 
     if isinstance(error, commands.MissingRequiredArgument):
         if ctx.command is not None and ctx.command.name == "verifysetup":
             await ctx.send("Utilisation : `!verifysetup @RôleVérifié`")
+            return
+
+    if isinstance(error, commands.BadArgument):
+        if ctx.command is not None and ctx.command.name == "vchsetup":
+            await ctx.send("Utilisation : `!vchsetup #vouches`")
             return
 
     if isinstance(error, commands.BadArgument):
