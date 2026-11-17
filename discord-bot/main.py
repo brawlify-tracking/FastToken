@@ -158,7 +158,7 @@ async def vouch_setup(
 @commands.guild_only()
 @commands.has_guild_permissions(manage_messages=True)
 async def vouch(ctx: commands.Context[commands.Bot]) -> None:
-    """Ask for a vouch and forward the next customer's text anonymously."""
+    """Collect a rated vouch, publish it with attribution, and delete the ticket."""
     guild = ctx.guild
     if guild is None:
         await ctx.send("Cette commande doit être utilisée dans un serveur.")
@@ -174,6 +174,11 @@ async def vouch(ctx: commands.Context[commands.Bot]) -> None:
         await ctx.send(
             "Le salon de vouches n'est pas configuré. "
             "Un administrateur doit lancer `!vchsetup #vouches`."
+        )
+        return
+    if destination.id == ctx.channel.id:
+        await ctx.send(
+            "Le salon de publication ne peut pas être le ticket qui sera supprimé."
         )
         return
 
@@ -195,19 +200,30 @@ async def vouch(ctx: commands.Context[commands.Bot]) -> None:
     destination_permissions = (
         destination.permissions_for(bot_member) if bot_member else None
     )
+    can_delete_ticket = False
+    if ticket_permissions is not None:
+        if isinstance(ctx.channel, discord.Thread):
+            can_delete_ticket = (
+                ticket_permissions.manage_threads
+                or ticket_permissions.manage_channels
+            )
+        else:
+            can_delete_ticket = ticket_permissions.manage_channels
     if (
         ticket_permissions is None
         or not ticket_permissions.view_channel
         or not ticket_permissions.send_messages
         or not ticket_permissions.embed_links
+        or not can_delete_ticket
         or destination_permissions is None
         or not destination_permissions.view_channel
         or not destination_permissions.send_messages
         or not destination_permissions.embed_links
     ):
         await ctx.send(
-            "Le bot doit pouvoir voir le salon configuré, y envoyer des messages "
-            "et intégrer des liens."
+            "Dans le ticket, le bot doit pouvoir envoyer des messages et intégrer "
+            "des liens, ainsi que gérer les salons (ou les fils). Il doit aussi "
+            "pouvoir envoyer des embeds dans le salon des vouches."
         )
         return
 
@@ -223,18 +239,24 @@ async def vouch(ctx: commands.Context[commands.Bot]) -> None:
             title="Laisse ton avis / Leave a review",
             description=(
                 "**Français**\n"
-                "Choisis une note de **1 à 5 étoiles**, puis envoie ton avis "
-                "dans un message séparé dans ce ticket.\n\n"
+                "Choisis d'abord une note de **1 à 5 étoiles**. Copie ensuite "
+                f"exactement `{VOUCH_PROMPT}` dans le message juste au-dessus et "
+                "renvoie-le dans ce ticket comme nouveau message.\n\n"
                 f"Ton **nom d'utilisateur Discord** et ta **photo de profil** "
-                f"seront publiés avec ton avis dans {destination.mention}.\n\n"
-                "N'inclus pas d'informations personnelles."
+                f"seront publiés avec ta note dans {destination.mention}. "
+                "Après publication, ce ticket sera supprimé automatiquement. "
+                "Sans note, il ne sera pas supprimé. N'inclus pas d'informations "
+                "personnelles."
                 "\n\n"
                 "**English**\n"
-                "Choose a rating from **1 to 5 stars**, then send your review "
-                "in a separate message in this ticket.\n\n"
+                "First choose a rating from **1 to 5 stars**. Then copy exactly "
+                f"`{VOUCH_PROMPT}` from the message above and send it in this "
+                "ticket as a new message.\n\n"
                 f"Your **Discord username** and **profile picture** will be "
-                f"published with your review in {destination.mention}.\n\n"
-                "Do not include personal information."
+                f"published with your rating in {destination.mention}. After "
+                "posting, this ticket will be deleted automatically. Without a "
+                "rating, it will not be deleted. Do not include personal "
+                "information."
             ),
             color=discord.Color(0x5865F2),
         )
@@ -266,18 +288,23 @@ async def forward_vouch(message: discord.Message) -> None:
     if message.content.startswith("!"):
         return
 
-    if (
-        pending.rating is None
-        or pending.reviewer_user_id != message.author.id
-    ):
+    if pending.rating is None or pending.reviewer_user_id != message.author.id:
+        return
+
+    if message.content.strip() != VOUCH_PROMPT.strip():
+        await message.channel.send(
+            f"Copie exactement `{VOUCH_PROMPT}` dans le message ci-dessus et "
+            "renvoie-le ici. Le ticket ne sera supprimé qu'après l'envoi correct.\n\n"
+            f"Copy exactly `{VOUCH_PROMPT}` from the message above and send it "
+            "here. The ticket will only be deleted after the correct message."
+        )
         return
 
     content = sanitize_vouch_text(message.content)
     if not content:
         if message.attachments:
             await message.channel.send(
-                "Le salon `#vouches` ne reçoit que du texte. "
-                "Envoie une phrase pour ton vouch."
+                f"Copie exactement `{VOUCH_PROMPT}` et envoie-le dans le ticket."
             )
         return
 
@@ -304,6 +331,8 @@ async def forward_vouch(message: discord.Message) -> None:
         value=f"{'⭐' * pending.rating} ({pending.rating}/5)",
         inline=False,
     )
+    if not vouch_manager.begin_publish(message.channel.id):
+        return
     try:
         await destination.send(
             embed=embed,
@@ -311,21 +340,51 @@ async def forward_vouch(message: discord.Message) -> None:
         )
     except discord.Forbidden:
         vouch_manager.clear(message.channel.id)
+        vouch_manager.finish_publish(message.channel.id)
         await message.channel.send(
             "Je n'ai pas la permission de publier dans le salon configuré. "
-            "Vérifie ses permissions, puis relance `!vch`."
+            "Vérifie ses permissions. Le ticket n'a pas été supprimé."
         )
         return
     except discord.HTTPException:
         logger.exception("Impossible de publier le vouch dans #vouches")
         vouch_manager.clear(message.channel.id)
+        vouch_manager.finish_publish(message.channel.id)
         await message.channel.send(
-            "Je n'ai pas pu publier le vouch. Le staff peut relancer `!vch`."
+            "Je n'ai pas pu publier le vouch. Le ticket n'a pas été supprimé."
         )
         return
 
     vouch_manager.clear(message.channel.id)
-    await message.channel.send("Merci, ton vouch a été publié dans le salon des vouches.")
+    vouch_manager.finish_publish(message.channel.id)
+    try:
+        await message.channel.send(
+            "Ton vouch a été publié; ce ticket va maintenant être supprimé."
+        )
+    except discord.HTTPException:
+        logger.info("Impossible d'envoyer la confirmation avant suppression du ticket")
+
+    try:
+        await message.channel.delete(
+            reason=f"Vouch publié avec une note de {pending.rating}/5"
+        )
+    except discord.Forbidden:
+        logger.exception("Permission refusée pour supprimer le ticket après le vouch")
+        try:
+            await message.channel.send(
+                "Le vouch est publié, mais je n'ai pas pu supprimer ce ticket. "
+                "Vérifie la permission de gestion des salons ou des fils."
+            )
+        except discord.HTTPException:
+            pass
+    except discord.HTTPException:
+        logger.exception("Impossible de supprimer le ticket après le vouch")
+        try:
+            await message.channel.send(
+                "Le vouch est publié, mais le ticket n'a pas pu être supprimé."
+            )
+        except discord.HTTPException:
+            pass
 
 
 async def _send_litecoin_address(

@@ -11,6 +11,8 @@ from pathlib import Path
 import discord
 from discord.ext import commands
 
+from config import VOUCH_PROMPT
+
 _PENDING_PATH = Path(__file__).with_name("vouch_pending.json")
 _SETTINGS_PATH = Path(__file__).with_name("vouch_settings.json")
 VOUCH_TIMEOUT_SECONDS = 15 * 60
@@ -34,6 +36,7 @@ class VouchManager:
         self._settings_path = path.with_name(_SETTINGS_PATH.name)
         self._pending: dict[int, PendingVouch] = self._read_pending()
         self._destination_channels = self._read_destination_channels()
+        self._publishing: set[int] = set()
         self._remove_expired()
 
     def destination_channel_id(self, guild_id: int) -> int | None:
@@ -104,6 +107,18 @@ class VouchManager:
     def pending_items(self) -> list[tuple[int, PendingVouch]]:
         self._remove_expired()
         return list(self._pending.items())
+
+    def begin_publish(self, ticket_channel_id: int) -> bool:
+        if ticket_channel_id in self._publishing:
+            return False
+        pending = self.get(ticket_channel_id)
+        if pending is None or pending.rating is None:
+            return False
+        self._publishing.add(ticket_channel_id)
+        return True
+
+    def finish_publish(self, ticket_channel_id: int) -> None:
+        self._publishing.discard(ticket_channel_id)
 
     def clear(self, ticket_channel_id: int) -> None:
         if self._pending.pop(ticket_channel_id, None) is not None:
@@ -284,8 +299,13 @@ class VouchRatingButton(discord.ui.Button):
 
         await interaction.response.send_message(
             f"Note enregistrée : {'⭐' * self.rating} ({self.rating}/5). "
-            "Envoie maintenant ton avis dans le ticket. Ton nom Discord et "
-            "ta photo de profil seront affichés dans le salon des vouches.",
+            f"Copie exactement `{VOUCH_PROMPT}` du message au-dessus et "
+            "renvoie-le dans ce ticket. Ton nom et ta photo seront publics; "
+            "le ticket sera supprimé après la publication.\n\n"
+            f"Rating saved: {'⭐' * self.rating} ({self.rating}/5). Copy "
+            f"`{VOUCH_PROMPT}` from the message above and send it in this "
+            "ticket. Your name and photo will be public; the ticket will be "
+            "deleted after posting.",
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )

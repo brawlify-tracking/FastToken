@@ -56,7 +56,8 @@ et consulter ses journaux.
 - `!vchsetup #salon` configure le salon de publication des vouches; sans argument,
   la commande affiche le salon actuel.
 - `!vch` envoie le texte de vouch séparément, propose une note de 1 à 5 étoiles,
-  puis publie l'avis du client avec son nom Discord et sa photo de profil.
+  puis publie le vouch avec le nom Discord et la photo de profil du client. Le
+  ticket est supprimé seulement après réception du vouch et d'une note.
 
 Si une valeur est encore vide ou invalide, le bot explique quel réglage corriger.
 
@@ -66,16 +67,21 @@ Si une valeur est encore vide ou invalide, le bot explique quel réglage corrige
    `!vchsetup #vouches` en mentionnant le salon; le réglage est conservé.
 2. Autorise le bot à voir ce salon, à envoyer des messages et à intégrer des liens.
 3. Dans un ticket, un membre du staff ayant la permission **Gérer les messages**
-   lance `!vch`.
+   lance `!vch`. Le bot doit aussi pouvoir gérer les salons; pour un ticket dans
+   un fil, il doit pouvoir gérer les fils.
 4. Le bot envoie `+rep FastToken Boost ❤️‍🩹` dans un message séparé, puis affiche
    les explications en français et en anglais avec les boutons de note.
-5. Le client choisit une note, puis envoie son avis. Le bot publie un embed dans
-   le salon configuré avec le texte, la note, son nom Discord et sa photo de profil.
+5. Le client choisit une note, copie exactement `+rep FastToken Boost ❤️‍🩹` et
+   l'envoie dans le ticket comme nouveau message. Le bot vérifie que le texte
+   correspond exactement, puis publie un embed dans le
+   salon configuré avec la note, son nom Discord et sa photo de profil, puis
+   supprime le ticket.
 
-Le bot informe le client avant l'envoi que son nom et sa photo seront publics.
-Il retire les mentions Discord du texte et ne recopie pas les pièces jointes.
-La demande reste en attente au redémarrage du bot et expire après 15 minutes.
-Le client doit éviter d'inclure lui-même des informations personnelles dans son avis.
+Le bot informe le client en français et en anglais avant l'envoi que son nom et
+sa photo seront publics et que le ticket sera supprimé après publication. Sans
+note, le ticket n'est pas supprimé. Il retire les mentions Discord et ne recopie
+pas les pièces jointes. La demande reste en attente au redémarrage du bot et
+expire après 15 minutes.
 
 ## Vérification des nouveaux membres
 
