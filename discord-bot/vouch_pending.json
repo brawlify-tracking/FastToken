@@ -2,6 +2,8 @@
   "1572327850000777276": {
     "guild_id": 1571609608697549001,
     "destination_channel_id": 1572332534887612516,
-    "expires_at": 1794950094.3190691
+    "expires_at": 1794950406.1430018,
+    "rating": null,
+    "reviewer_user_id": null
   }
 }
