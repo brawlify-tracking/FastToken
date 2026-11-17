@@ -1,0 +1,1 @@
+- [Discord payment messages](discord-payment-messages.md) — preserve the approved PayPal button and copyable Litecoin embed.

@@ -51,7 +51,26 @@ async def paypal(ctx: commands.Context[commands.Bot]) -> None:
         )
         return
 
-    await ctx.send(link, allowed_mentions=discord.AllowedMentions.none())
+    embed = discord.Embed(
+        title="Paiement PayPal",
+        description="Accède au paiement avec le bouton ci-dessous.",
+        color=discord.Color(0x003087),
+    )
+    embed.set_footer(text="Lien de paiement PayPal")
+
+    view = discord.ui.View()
+    view.add_item(
+        discord.ui.Button(
+            label="Ouvrir PayPal",
+            style=discord.ButtonStyle.link,
+            url=link,
+        )
+    )
+    await ctx.send(
+        embed=embed,
+        view=view,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
 
 
 @bot.command(name="ltc")
@@ -65,8 +84,20 @@ async def litecoin(ctx: commands.Context[commands.Bot]) -> None:
         )
         return
 
+    embed = discord.Embed(
+        title="Paiement en Litecoin",
+        description="Envoie ton paiement à l’adresse de réception ci-dessous.",
+        color=discord.Color(0x345D9D),
+    )
+    embed.add_field(
+        name="Adresse Litecoin",
+        value=f"```text\n{address}\n```",
+        inline=False,
+    )
+    embed.set_footer(text="Vérifie l’adresse et le réseau avant l’envoi.")
+
     await ctx.send(
-        f"Adresse Litecoin :\n`{address}`",
+        embed=embed,
         allowed_mentions=discord.AllowedMentions.none(),
     )
 
