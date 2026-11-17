@@ -20,7 +20,12 @@ from verification import (
     register_saved_verification_views,
     save_verification_role,
 )
-from vouches import VouchManager, anonymize_vouch
+from vouches import (
+    VouchManager,
+    VouchRatingView,
+    register_saved_vouch_views,
+    sanitize_vouch_text,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +41,7 @@ class PaymentBot(commands.Bot):
     async def setup_hook(self) -> None:
         await super().setup_hook()
         register_saved_verification_views(self)
+        register_saved_vouch_views(self, vouch_manager)
 
 
 bot = PaymentBot(command_prefix="!", intents=intents, help_command=None)
@@ -171,19 +177,30 @@ async def vouch(ctx: commands.Context[commands.Bot]) -> None:
         )
         return
 
-    if vouch_manager.get(ctx.channel.id) is not None:
-        await ctx.send(
-            "Un vouch est déjà en attente dans ce ticket. "
-            "Attends la réponse du client avant d'en lancer un autre."
-        )
-        return
+    pending = vouch_manager.get(ctx.channel.id)
+    if pending is not None:
+        if pending.reviewer_user_id is not None:
+            await ctx.send(
+                "Un client a déjà commencé son vouch dans ce ticket. "
+                "Attends son avis ou l'expiration de la demande."
+            )
+            return
+        # Refresh an unanswered request, including requests created by the old flow.
+        vouch_manager.clear(ctx.channel.id)
 
     bot_member = guild.me
+    ticket_permissions = (
+        ctx.channel.permissions_for(bot_member) if bot_member else None
+    )
     destination_permissions = (
         destination.permissions_for(bot_member) if bot_member else None
     )
     if (
-        destination_permissions is None
+        ticket_permissions is None
+        or not ticket_permissions.view_channel
+        or not ticket_permissions.send_messages
+        or not ticket_permissions.embed_links
+        or destination_permissions is None
         or not destination_permissions.view_channel
         or not destination_permissions.send_messages
         or not destination_permissions.embed_links
@@ -194,12 +211,37 @@ async def vouch(ctx: commands.Context[commands.Bot]) -> None:
         )
         return
 
-    vouch_manager.arm(ctx.channel.id, guild.id, destination.id)
+    if not vouch_manager.arm(ctx.channel.id, guild.id, destination.id):
+        await ctx.send("Un vouch est déjà en attente dans ce ticket.")
+        return
     try:
         await ctx.send(
-            f"{VOUCH_PROMPT}\n\n"
-            f"Ta prochaine réponse sera publiée sans ton nom dans "
-            f"{destination.mention}. N'inclus pas d'informations personnelles."
+            VOUCH_PROMPT,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        instructions = discord.Embed(
+            title="Laisse ton avis / Leave a review",
+            description=(
+                "**Français**\n"
+                "Choisis une note de **1 à 5 étoiles**, puis envoie ton avis "
+                "dans un message séparé dans ce ticket.\n\n"
+                f"Ton **nom d'utilisateur Discord** et ta **photo de profil** "
+                f"seront publiés avec ton avis dans {destination.mention}.\n\n"
+                "N'inclus pas d'informations personnelles."
+                "\n\n"
+                "**English**\n"
+                "Choose a rating from **1 to 5 stars**, then send your review "
+                "in a separate message in this ticket.\n\n"
+                f"Your **Discord username** and **profile picture** will be "
+                f"published with your review in {destination.mention}.\n\n"
+                "Do not include personal information."
+            ),
+            color=discord.Color(0x5865F2),
+        )
+        await ctx.send(
+            embed=instructions,
+            view=VouchRatingView(vouch_manager, ctx.channel.id),
+            allowed_mentions=discord.AllowedMentions.none(),
         )
     except discord.HTTPException:
         vouch_manager.clear(ctx.channel.id)
@@ -208,7 +250,7 @@ async def vouch(ctx: commands.Context[commands.Bot]) -> None:
 
 @bot.listen("on_message")
 async def forward_vouch(message: discord.Message) -> None:
-    """Forward one text response from a non-staff member without attribution."""
+    """Forward a rated text response with the customer's Discord identity."""
     if message.author.bot or message.guild is None:
         return
     if not isinstance(message.author, discord.Member):
@@ -224,7 +266,13 @@ async def forward_vouch(message: discord.Message) -> None:
     if message.content.startswith("!"):
         return
 
-    content = anonymize_vouch(message.content)
+    if (
+        pending.rating is None
+        or pending.reviewer_user_id != message.author.id
+    ):
+        return
+
+    content = sanitize_vouch_text(message.content)
     if not content:
         if message.attachments:
             await message.channel.send(
@@ -247,6 +295,15 @@ async def forward_vouch(message: discord.Message) -> None:
         description=content[:4096],
         color=discord.Color(0x57F287),
     )
+    embed.set_author(
+        name=f"{message.author.display_name} (@{message.author.name})",
+        icon_url=message.author.display_avatar.url,
+    )
+    embed.add_field(
+        name="Note",
+        value=f"{'⭐' * pending.rating} ({pending.rating}/5)",
+        inline=False,
+    )
     try:
         await destination.send(
             embed=embed,
@@ -268,7 +325,7 @@ async def forward_vouch(message: discord.Message) -> None:
         return
 
     vouch_manager.clear(message.channel.id)
-    await message.channel.send("Merci, ton vouch a été publié anonymement.")
+    await message.channel.send("Merci, ton vouch a été publié dans le salon des vouches.")
 
 
 async def _send_litecoin_address(

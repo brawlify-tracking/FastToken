@@ -55,9 +55,8 @@ et consulter ses journaux.
 - `!verifysetup @Rôle` publie un panneau de vérification dans le salon courant.
 - `!vchsetup #salon` configure le salon de publication des vouches; sans argument,
   la commande affiche le salon actuel.
-- `!vch` publie le message de vouch dans le ticket. La prochaine réponse textuelle
-  d'un membre sans la permission « Gérer les messages » est copiée dans le salon
-  configuré, sans nom ni lien vers le ticket. La demande expire après 15 minutes.
+- `!vch` envoie le texte de vouch séparément, propose une note de 1 à 5 étoiles,
+  puis publie l'avis du client avec son nom Discord et sa photo de profil.
 
 Si une valeur est encore vide ou invalide, le bot explique quel réglage corriger.
 
@@ -68,14 +67,15 @@ Si une valeur est encore vide ou invalide, le bot explique quel réglage corrige
 2. Autorise le bot à voir ce salon, à envoyer des messages et à intégrer des liens.
 3. Dans un ticket, un membre du staff ayant la permission **Gérer les messages**
    lance `!vch`.
-4. Le bot affiche `+rep FastToken Boost ❤️‍🩹` et indique au client que sa prochaine
-   réponse sera publiée sans son nom. Cette réponse textuelle est publiée dans
-   le salon configuré sous forme d'embed, sans auteur ni lien vers le ticket.
+4. Le bot envoie `+rep FastToken Boost ❤️‍🩹` dans un message séparé, puis affiche
+   les explications en français et en anglais avec les boutons de note.
+5. Le client choisit une note, puis envoie son avis. Le bot publie un embed dans
+   le salon configuré avec le texte, la note, son nom Discord et sa photo de profil.
 
-Le bot n'ajoute ni nom d'utilisateur ni lien vers le ticket, retire les mentions
-Discord et ne recopie pas les pièces jointes. La demande reste en attente au
-redémarrage du bot et expire après 15 minutes. Le client doit éviter d'inclure
-lui-même des informations personnelles dans son texte.
+Le bot informe le client avant l'envoi que son nom et sa photo seront publics.
+Il retire les mentions Discord du texte et ne recopie pas les pièces jointes.
+La demande reste en attente au redémarrage du bot et expire après 15 minutes.
+Le client doit éviter d'inclure lui-même des informations personnelles dans son avis.
 
 ## Vérification des nouveaux membres
 

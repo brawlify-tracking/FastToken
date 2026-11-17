@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+import discord
+from discord.ext import commands
 
 _PENDING_PATH = Path(__file__).with_name("vouch_pending.json")
 _SETTINGS_PATH = Path(__file__).with_name("vouch_settings.json")
@@ -19,10 +22,12 @@ class PendingVouch:
     guild_id: int
     destination_channel_id: int
     expires_at: float
+    rating: int | None = None
+    reviewer_user_id: int | None = None
 
 
 class VouchManager:
-    """Keep at most one pending vouch per ticket channel, across restarts."""
+    """Keep one pending, rated vouch per ticket channel across restarts."""
 
     def __init__(self, path: Path = _PENDING_PATH) -> None:
         self._path = path
@@ -73,6 +78,33 @@ class VouchManager:
         self._write_pending()
         return True
 
+    def record_rating(
+        self,
+        ticket_channel_id: int,
+        reviewer_user_id: int,
+        rating: int,
+    ) -> bool:
+        pending = self.get(ticket_channel_id)
+        if pending is None or not 1 <= rating <= 5:
+            return False
+        if (
+            pending.reviewer_user_id is not None
+            and pending.reviewer_user_id != reviewer_user_id
+        ):
+            return False
+
+        self._pending[ticket_channel_id] = replace(
+            pending,
+            rating=rating,
+            reviewer_user_id=reviewer_user_id,
+        )
+        self._write_pending()
+        return True
+
+    def pending_items(self) -> list[tuple[int, PendingVouch]]:
+        self._remove_expired()
+        return list(self._pending.items())
+
     def clear(self, ticket_channel_id: int) -> None:
         if self._pending.pop(ticket_channel_id, None) is not None:
             self._write_pending()
@@ -115,16 +147,44 @@ class VouchManager:
                     and value[key] > 0
                     for key in ("guild_id", "destination_channel_id")
                 )
+                or isinstance(value.get("expires_at"), bool)
                 or not isinstance(value.get("expires_at"), (int, float))
             ):
                 raise RuntimeError(
                     f"Une entrée est invalide dans {self._path.name}."
                 )
 
+            rating = value.get("rating")
+            reviewer_user_id = value.get("reviewer_user_id")
+            if (
+                (rating is None) != (reviewer_user_id is None)
+                or (
+                    rating is not None
+                    and (
+                        isinstance(rating, bool)
+                        or not isinstance(rating, int)
+                        or not 1 <= rating <= 5
+                    )
+                )
+                or (
+                    reviewer_user_id is not None
+                    and (
+                        isinstance(reviewer_user_id, bool)
+                        or not isinstance(reviewer_user_id, int)
+                        or reviewer_user_id <= 0
+                    )
+                )
+            ):
+                raise RuntimeError(
+                    f"La note enregistrée est invalide dans {self._path.name}."
+                )
+
             pending_vouches[int(channel_id)] = PendingVouch(
                 guild_id=value["guild_id"],
                 destination_channel_id=value["destination_channel_id"],
                 expires_at=float(value["expires_at"]),
+                rating=rating,
+                reviewer_user_id=reviewer_user_id,
             )
         return pending_vouches
 
@@ -157,6 +217,8 @@ class VouchManager:
                     "guild_id": pending.guild_id,
                     "destination_channel_id": pending.destination_channel_id,
                     "expires_at": pending.expires_at,
+                    "rating": pending.rating,
+                    "reviewer_user_id": pending.reviewer_user_id,
                 }
                 for channel_id, pending in self._pending.items()
             },
@@ -167,6 +229,83 @@ class VouchManager:
         temporary_path.replace(self._path)
 
 
-def anonymize_vouch(content: str) -> str:
-    """Remove Discord user, role, and channel mention markup."""
+class VouchRatingButton(discord.ui.Button):
+    def __init__(
+        self,
+        manager: VouchManager,
+        ticket_channel_id: int,
+        rating: int,
+    ) -> None:
+        super().__init__(
+            label=f"{rating} ⭐",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"vch-rate:{ticket_channel_id}:{rating}",
+        )
+        self.manager = manager
+        self.ticket_channel_id = ticket_channel_id
+        self.rating = rating
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        pending = self.manager.get(self.ticket_channel_id)
+        if (
+            pending is None
+            or interaction.guild_id != pending.guild_id
+            or interaction.channel_id != self.ticket_channel_id
+        ):
+            await interaction.response.send_message(
+                "Cette demande de vouch a expiré. Le staff peut relancer `!vch`.",
+                ephemeral=True,
+            )
+            return
+
+        member = interaction.user
+        if not isinstance(member, discord.Member):
+            await interaction.response.send_message(
+                "Cette note doit être donnée depuis le serveur.",
+                ephemeral=True,
+            )
+            return
+        if member.guild_permissions.manage_messages:
+            await interaction.response.send_message(
+                "La note est réservée au client du ticket.",
+                ephemeral=True,
+            )
+            return
+        if not self.manager.record_rating(
+            self.ticket_channel_id,
+            member.id,
+            self.rating,
+        ):
+            await interaction.response.send_message(
+                "Un autre membre a déjà commencé ce vouch.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            f"Note enregistrée : {'⭐' * self.rating} ({self.rating}/5). "
+            "Envoie maintenant ton avis dans le ticket. Ton nom Discord et "
+            "ta photo de profil seront affichés dans le salon des vouches.",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+
+class VouchRatingView(discord.ui.View):
+    def __init__(self, manager: VouchManager, ticket_channel_id: int) -> None:
+        super().__init__(timeout=None)
+        for rating in range(1, 6):
+            self.add_item(VouchRatingButton(manager, ticket_channel_id, rating))
+
+
+def register_saved_vouch_views(
+    bot: commands.Bot,
+    manager: VouchManager,
+) -> None:
+    for ticket_channel_id, _pending in manager.pending_items():
+        bot.add_view(VouchRatingView(manager, ticket_channel_id))
+
+
+def sanitize_vouch_text(content: str) -> str:
+    """Remove Discord mention markup from customer-provided text."""
     return _DISCORD_MENTION.sub("[mention retirée]", content).strip()
