@@ -234,6 +234,7 @@ class VouchManager:
                     "expires_at": pending.expires_at,
                     "rating": pending.rating,
                     "reviewer_user_id": pending.reviewer_user_id,
+                    "anonymous": pending.anonymous,
                 }
                 for channel_id, pending in self._pending.items()
             },
