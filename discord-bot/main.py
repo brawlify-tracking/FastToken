@@ -265,7 +265,7 @@ async def vouch(ctx: commands.Context[commands.Bot]) -> None:
         )
         await ctx.send(
             embed=instructions,
-            view=VouchRatingView(vouch_manager, ctx.channel.id),
+            view=VouchPrivacyView(vouch_manager, ctx.channel.id),
             allowed_mentions=discord.AllowedMentions.none(),
         )
     except discord.HTTPException:
