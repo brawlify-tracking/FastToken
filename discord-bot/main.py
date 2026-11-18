@@ -339,11 +339,6 @@ async def forward_vouch(message: discord.Message) -> None:
         value=f"{'⭐' * pending.rating} ({pending.rating}/5)",
         inline=False,
     )
-    embed.add_field(
-        name="Note",
-        value=f"{'⭐' * pending.rating} ({pending.rating}/5)",
-        inline=False,
-    )
     if not vouch_manager.begin_publish(message.channel.id):
         return
     try:
