@@ -26,7 +26,7 @@ class PendingVouch:
     expires_at: float
     rating: int | None = None
     reviewer_user_id: int | None = None
-
+    anonymous: bool | None = None
 
 class VouchManager:
     """Keep one pending, rated vouch per ticket channel across restarts."""
