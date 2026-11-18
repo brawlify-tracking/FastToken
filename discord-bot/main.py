@@ -240,25 +240,27 @@ async def vouch(ctx: commands.Context[commands.Bot]) -> None:
             title="Laisse ton avis / Leave a review",
             description=(
                 "**Français**\n"
-                "Choisis d'abord une note de **1 à 5 étoiles**. Copie ensuite "
+                "Choisis d'abord entre **Anonymous** et **Public**. "
+                "Ensuite, tu pourras choisir une note de **1 à 5 étoiles**. "
+                "Copie ensuite "
                 f"exactement `{VOUCH_PROMPT}` dans le message juste au-dessus et "
                 "renvoie-le dans ce ticket comme nouveau message.\n\n"
-                f"Ton **nom d'utilisateur Discord** et ta **photo de profil** "
-                f"seront publiés avec ta note dans {destination.mention}. "
+                "Si tu choisis **Public**, ton nom et ta photo seront affichés. "
+                "Si tu choisis **Anonymous**, ils ne seront pas affichés. "
+                f"Ton avis sera publié dans {destination.mention}. "
                 "Après publication, ce ticket sera supprimé automatiquement. "
                 "Sans note, il ne sera pas supprimé. N'inclus pas d'informations "
                 "personnelles."
                 "\n\n"
                 "**English**\n"
-                "First choose a rating from **1 to 5 stars**. Then copy exactly "
-                f"`{VOUCH_PROMPT}` from the message above and send it in this "
-                "ticket as a new message.\n\n"
-                f"Your **Discord username** and **profile picture** will be "
-                f"published with your rating in {destination.mention}. After "
-                "posting, this ticket will be deleted automatically. Without a "
-                "rating, it will not be deleted. Do not include personal "
-                "information."
-            ),
+                "First choose between **Anonymous** and **Public**. "
+                "Then you will be able to choose a rating from **1 to 5 stars**. "
+                "Copy the exact message above and send it in this ticket.\n\n"
+                "If you choose **Public**, your username and profile picture will be displayed. "
+                "If you choose **Anonymous**, they will not be displayed. "
+                f"Your review will be published in {destination.mention}. "
+                "The ticket will be automatically deleted after publication. "
+                "Without a rating, it will not be deleted. Do not include personal information."            ),
             color=discord.Color(0x5865F2),
         )
         await ctx.send(
