@@ -326,7 +326,7 @@ async def forward_vouch(message: discord.Message) -> None:
         description=content[:4096],
         color=discord.Color(0x57F287),
     )
-        if pending.anonymous:
+    if pending.anonymous:
         embed.set_author(name="Anonymous")
     else:
         embed.set_author(
