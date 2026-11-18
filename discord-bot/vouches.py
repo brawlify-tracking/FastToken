@@ -104,7 +104,7 @@ class VouchManager:
         self._write_pending()
         return True
 
-        def record_anonymity(
+    def record_anonymity(
         self,
         ticket_channel_id: int,
         reviewer_user_id: int,
