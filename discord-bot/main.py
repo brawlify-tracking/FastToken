@@ -22,6 +22,7 @@ from verification import (
 )
 from vouches import (
     VouchManager,
+    VouchPrivacyView,
     VouchRatingView,
     register_saved_vouch_views,
     sanitize_vouch_text,
