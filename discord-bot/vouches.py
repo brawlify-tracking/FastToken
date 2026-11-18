@@ -171,6 +171,7 @@ class VouchManager:
 
             rating = value.get("rating")
             reviewer_user_id = value.get("reviewer_user_id")
+            anonymous = value.get("anonymous")
             if (
                 (rating is None) != (reviewer_user_id is None)
                 or (
@@ -189,6 +190,7 @@ class VouchManager:
                         or reviewer_user_id <= 0
                     )
                 )
+                 or (anonymous is not None and not isinstance(anonymous, bool))
             ):
                 raise RuntimeError(
                     f"La note enregistrée est invalide dans {self._path.name}."
@@ -200,6 +202,7 @@ class VouchManager:
                 expires_at=float(value["expires_at"]),
                 rating=rating,
                 reviewer_user_id=reviewer_user_id,
+                anonymous=anonymous,
             )
         return pending_vouches
 
