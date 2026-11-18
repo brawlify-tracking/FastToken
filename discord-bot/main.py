@@ -260,7 +260,8 @@ async def vouch(ctx: commands.Context[commands.Bot]) -> None:
                 "If you choose **Anonymous**, they will not be displayed. "
                 f"Your review will be published in {destination.mention}. "
                 "The ticket will be automatically deleted after publication. "
-                "Without a rating, it will not be deleted. Do not include personal information."            ),
+                "Without a rating, it will not be deleted. Do not include personal information."
+),
             color=discord.Color(0x5865F2),
         )
         await ctx.send(
