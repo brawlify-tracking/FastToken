@@ -104,6 +104,32 @@ class VouchManager:
         self._write_pending()
         return True
 
+        def record_anonymity(
+        self,
+        ticket_channel_id: int,
+        reviewer_user_id: int,
+        anonymous: bool,
+    ) -> bool:
+        pending = self.get(ticket_channel_id)
+
+        if pending is None or not isinstance(anonymous, bool):
+            return False
+
+        if (
+            pending.reviewer_user_id is not None
+            and pending.reviewer_user_id != reviewer_user_id
+        ):
+            return False
+
+        self._pending[ticket_channel_id] = replace(
+            pending,
+            reviewer_user_id=reviewer_user_id,
+            anonymous=anonymous,
+        )
+
+        self._write_pending()
+        return True
+
     def pending_items(self) -> list[tuple[int, PendingVouch]]:
         self._remove_expired()
         return list(self._pending.items())
