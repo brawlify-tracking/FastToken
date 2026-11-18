@@ -341,19 +341,96 @@ class VouchRatingButton(discord.ui.Button):
         )
 
 
+
 class VouchRatingView(discord.ui.View):
     def __init__(self, manager: VouchManager, ticket_channel_id: int) -> None:
         super().__init__(timeout=None)
         for rating in range(1, 6):
             self.add_item(VouchRatingButton(manager, ticket_channel_id, rating))
 
+class VouchPrivacyButton(discord.ui.Button):
+    def __init__(
+        self,
+        manager: VouchManager,
+        ticket_channel_id: int,
+        anonymous: bool,
+    ) -> None:
+        super().__init__(
+            label="Anonymous" if anonymous else "Public",
+            emoji="🕶️" if anonymous else "👤",
+            style=discord.ButtonStyle.secondary if anonymous else discord.ButtonStyle.primary,
+            custom_id=f"vch-privacy:{ticket_channel_id}:{int(anonymous)}",
+        )
+        self.manager = manager
+        self.ticket_channel_id = ticket_channel_id
+        self.anonymous = anonymous
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        pending = self.manager.get(self.ticket_channel_id)
+
+        if (
+            pending is None
+            or interaction.guild_id != pending.guild_id
+            or interaction.channel_id != self.ticket_channel_id
+        ):
+            await interaction.response.send_message(
+                "This vouch request has expired.",
+                ephemeral=True,
+            )
+            return
+
+        member = interaction.user
+
+        if not isinstance(member, discord.Member):
+            await interaction.response.send_message(
+                "You must be a server member.",
+                ephemeral=True,
+            )
+            return
+
+        if member.guild_permissions.manage_messages:
+            await interaction.response.send_message(
+                "Only the customer can choose this option.",
+                ephemeral=True,
+            )
+            return
+
+        if not self.manager.record_anonymity(
+            self.ticket_channel_id,
+            member.id,
+            self.anonymous,
+        ):
+            await interaction.response.send_message(
+                "Another member has already started this vouch.",
+                ephemeral=True,
+            )
+            return
+
+        choice = "anonymous" if self.anonymous else "public"
+
+        await interaction.response.edit_message(
+            content=f"Your choice is saved: **{choice}**.\nNow choose your rating below!",
+            view=VouchRatingView(self.manager, self.ticket_channel_id),
+        )
+
+
+class VouchPrivacyView(discord.ui.View):
+    def __init__(self, manager: VouchManager, ticket_channel_id: int) -> None:
+        super().__init__(timeout=None)
+        self.add_item(VouchPrivacyButton(manager, ticket_channel_id, True))
+        self.add_item(VouchPrivacyButton(manager, ticket_channel_id, False))
+
 
 def register_saved_vouch_views(
     bot: commands.Bot,
     manager: VouchManager,
 ) -> None:
-    for ticket_channel_id, _pending in manager.pending_items():
-        bot.add_view(VouchRatingView(manager, ticket_channel_id))
+    for ticket_channel_id, pending in manager.pending_items():
+        if pending.anonymous is None:
+            bot.add_view(VouchPrivacyView(manager, ticket_channel_id))
+        else:
+            bot.add_view(VouchRatingView(manager, ticket_channel_id))
+
 
 
 def sanitize_vouch_text(content: str) -> str:
