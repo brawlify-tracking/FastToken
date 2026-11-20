@@ -78,7 +78,7 @@ async def paypal(ctx: commands.Context[commands.Bot]) -> None:
 
     embed = discord.Embed(
         title="Paiement PayPal",
-        description="Accède au paiement avec le bouton ci-dessous.",
+        description="Accède au paiement avec le bouton ci-dessous, le paiement doit etre fait en Friend and Family.",
         color=discord.Color(0x003087),
     )
     embed.set_footer(text="Lien de paiement PayPal")
